@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RebahGuard Dashboard — Eye-Care & Posture Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.16.1/dist/mqtt.min.js"></script>
+<style>
+  :root {
+    --bg: #f3f6f4;
+    --card: #ffffff;
+    --card-alt: #f8faf9;
+    --line: #d8e2dc;
+    --text: #16241f;
+    --muted: #556b63;
+    --primary: #0f766e;
+    --primary-hover: #0d5f59;
+    --edge1: #0284c7;
+    --edge2: #d97706;
+    --enter-line: #dc2626;
+    --exit-line: #d97706;
+    --ok: #15803d; --ok-bg: #dcfce7;
+    --bad: #b91c1c; --bad-bg: #fee2e2;
+    --warn: #b45309; --warn-bg: #fef3c7;
+    --info: #0369a1; --info-bg: #e0f2fe;
+    --purple: #6d28d9; --purple-bg: #ede9fe;
+    --off: #475569; --off-bg: #e2e8f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b1512;
+      --card: #12211d;
+      --card-alt: #172a25;
+      --line: #243e36;
+      --text: #e6f2ee;
+      --muted: #94afa6;
+      --primary: #14b8a6;
+      --primary-hover: #2dd4bf;
+      --edge1: #38bdf8;
+      --edge2: #fbbf24;
+      --enter-line: #f87171;
+      --exit-line: #fbbf24;
+      --ok: #4ade80; --ok-bg: #123524;
+      --bad: #f87171; --bad-bg: #451a1a;
+      --warn: #fbbf24; --warn-bg: #3f2b0d;
+      --info: #38bdf8; --info-bg: #112d42;
+      --purple: #c4b5fd; --purple-bg: #2e1d59;
+      --off: #94a3b8; --off-bg: #1e293b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 20px 16px 56px;
+    display: grid;
+    gap: 16px;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 4px;
+  }
+  h1 { font-size: 24px; margin: 0; letter-spacing: -0.01em; }
+  .subtitle { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
+  h2 {
+    font-size: 14px;
+    margin: 0 0 12px;
+    color: var(--muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px 18px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+  .grid-2 {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .ok { color: var(--ok); background: var(--ok-bg); }
+  .bad { color: var(--bad); background: var(--bad-bg); }
+  .warn { color: var(--warn); background: var(--warn-bg); }
+  .info { color: var(--info); background: var(--info-bg); }
+  .purple { color: var(--purple); background: var(--purple-bg); }
+  .off { color: var(--off); background: var(--off-bg); }
+
+  form {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    align-items: end;
+  }
+  label {
+    display: grid;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  label.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 18px;
+    color: var(--text);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  label.checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+  }
+  input, select {
+    font: inherit;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--text);
+    width: 100%;
+  }
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 9px 14px;
+    border-radius: 9px;
+    border: 1px solid var(--line);
+    background: var(--card-alt);
+    color: var(--text);
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.08s;
+  }
+  button:active:not(:disabled) { transform: scale(0.98); }
+  button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+  button.warn-btn { background: var(--warn); border-color: var(--warn); color: #fff; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .between { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+
+  #status-badge {
+    font-size: 28px;
+    font-weight: 800;
+    margin: 4px 0;
+    padding: 8px 18px;
+    border-radius: 12px;
+    display: inline-block;
+    letter-spacing: 0.02em;
+  }
+  .progress-wrap {
+    margin: 14px 0 6px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    height: 18px;
+    overflow: hidden;
+    position: relative;
+  }
+  .progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--primary), var(--warn), var(--bad));
+    transition: width 0.25s ease;
+  }
+  .muted { color: var(--muted); font-size: 13px; }
+  dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 14px;
+    margin: 12px 0 0;
+  }
+  dt { color: var(--muted); font-size: 13px; }
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    text-align: right;
+  }
+  .legend {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .swatch {
+    display: inline-block;
+    width: 16px;
+    height: 4px;
+    border-radius: 2px;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  canvas { width: 100%; height: 250px; display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+  details summary {
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 15px;
+    user-select: none;
+  }
+  .calib-layout {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: 2fr 1fr;
+    margin-top: 14px;
+  }
+  @media (max-width: 820px) {
+    .calib-layout { grid-template-columns: 1fr; }
+  }
+  .raw-box {
+    background: var(--card-alt);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>RebahGuard Dashboard</h1>
+      <p class="subtitle">Sistem Pencegah Kebiasaan Main HP Sambil Rebahan Berbasis Multisensor &amp; MQTT Dua Arah</p>
+    </div>
+    <span id="conn" class="pill off" role="status">Belum terhubung</span>
+  </header>
+
+  <details class="card" id="settings" open>
+    <summary>Koneksi Broker (MQTT over WebSocket)</summary>
+    <p class="muted">
+      Dashboard terhubung ke broker menggunakan <b>WebSocket over TLS (WSS)</b>.
+      Konfigurasi lokal diambil otomatis dari <code>/config.json</code> tanpa mengekspos kredensial rahasia.
+    </p>
+    <form id="conn-form">
+      <label>WebSocket URL <input id="url" value="wss://broker.hivemq.com:8884/mqtt" required></label>
+      <label>PROJECT_ID <input id="project" placeholder="kelas_iot_demo" required></label>
+      <label>Username <input id="username" autocomplete="username"></label>
+      <label>Password <input id="password" type="password" autocomplete="current-password"></label>
+      <div class="row">
+        <button class="primary" id="connect-btn" type="submit">Hubungkan</button>
+        <button id="disconnect-btn" type="button" disabled>Putuskan</button>
+      </div>
+    </form>
+  </details>
+
+  <!-- STATUS UTAMA & PROGRESS DURASI REBAHAN -->
+  <section class="card" aria-labelledby="h-status">
+    <div class="between">
+      <h2 id="h-status" style="margin:0">Status FSM RebahGuard</h2>
+      <div class="row">
+        <span id="armed-pill" class="pill off">ARM: ?</span>
+        <span id="nag-pill" class="pill off">Nagging: Nonaktif</span>
+      </div>
+    </div>
+    <div style="margin-top:8px">
+      <div id="status-badge" class="off">WAITING</div>
+      <p id="status-reason" class="muted" style="margin:4px 0 0">Menunggu pesan dari topic status…</p>
+    </div>
+
+    <div style="margin-top:14px">
+      <div class="between">
+        <span class="muted">Durasi Rebahan Akumulatif</span>
+        <strong id="lying-timer-text">0.0s / 10.0s</strong>
+      </div>
+      <div class="progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="lying-progress-wrap">
+        <div class="progress-bar" id="lying-progress-bar"></div>
+      </div>
+    </div>
+
+    <!-- PANEL KONTROL 2 ARAH CEPAT -->
+    <div class="row" style="margin-top:14px">
+      <button class="danger" id="scold-btn" type="button" disabled>TEGUR ANAK SEKARANG (SCOLD)</button>
+      <button class="warn-btn" id="snooze-btn" type="button" disabled>SNOOZE 30 DETIK</button>
+      <button id="reset-btn" type="button" disabled>RESET STATE</button>
+      <button class="primary" id="arm-toggle-btn" type="button" disabled>ARM / DISARM</button>
+    </div>
+  </section>
+
+  <!-- KARTU EDGE 1 & EDGE 2 -->
+  <div class="grid-2">
+    <section class="card" aria-labelledby="h-edge1">
+      <div class="between">
+        <h2 id="h-edge1" style="margin:0">Edge 1 — HP Anak</h2>
+        <span id="edge1-state" class="pill off">Offline</span>
+      </div>
+      <dl>
+        <dt>Sudut Overhead (Pitch/Tilt)</dt><dd id="edge1-overhead">— °</dd>
+        <dt>Sudut Kemiringan (Roll)</dt><dd id="edge1-roll">— °</dd>
+        <dt>Gerakan Dinamis (motion_rms)</dt><dd id="edge1-motion">— m/s²</dd>
+        <dt>Aktivitas Gyro (gyro_rms)</dt><dd id="edge1-gyro">— rad/s</dd>
+        <dt>Nomor Sequence</dt><dd id="edge1-seq">—</dd>
+        <dt>Update Terakhir</dt><dd id="edge1-seen">—</dd>
+      </dl>
+    </section>
+
+    <section class="card" aria-labelledby="h-edge2">
+      <div class="between">
+        <h2 id="h-edge2" style="margin:0">Edge 2 — HP Orang Tua</h2>
+        <span id="edge2-state" class="pill off">Offline</span>
+      </div>
+      <dl>
+        <dt>Gerakan Goyangan (motion_rms)</dt><dd id="edge2-motion">— m/s²</dd>
+        <dt>Putaran Gyro (gyro_rms)</dt><dd id="edge2-gyro">— rad/s</dd>
+        <dt>Status Shake-to-Scold</dt><dd><span id="edge2-shake-ready" class="pill info">Siap Mendeteksi Goyangan</span></dd>
+        <dt>Nomor Sequence</dt><dd id="edge2-seq">—</dd>
+        <dt>Update Terakhir</dt><dd id="edge2-seen">—</dd>
+      </dl>
+    </section>
+  </div>
+
+  <!-- GRAFIK REAL-TIME OVERHEAD_DEG & HISTERESIS -->
+  <section class="card" aria-labelledby="h-chart">
+    <h2 id="h-chart">Grafik Real-Time Sudut Overhead HP Anak (60 Poin Terakhir)</h2>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--edge1)"></span>Overhead Angle (°) — Edge 1</span>
+      <span><span class="swatch" style="background:var(--enter-line)"></span>Garis Masuk Rebahan (<code id="legend-enter">120°</code>)</span>
+      <span><span class="swatch" style="background:var(--exit-line)"></span>Garis Keluar / Histeresis (<code id="legend-exit">105°</code>)</span>
+    </div>
+    <canvas id="chart" role="img" aria-label="Grafik riwayat overhead_deg dan garis histeresis"></canvas>
+  </section>
+
+  <!-- PANEL MODE KALIBRASI & LIVE TUNING THRESHOLD -->
+  <details class="card" id="calib-panel">
+    <summary>Mode Kalibrasi &amp; Live Tuning Threshold (Tanpa Restart)</summary>
+    <div class="calib-layout">
+      <div>
+        <p class="muted" style="margin-top:0">
+          Nilai di bawah tersinkronisasi otomatis dari topic <code>rebahguard/&lt;PROJECT_ID&gt;/config</code>.
+          Ubah parameter lalu klik <b>Terapkan Threshold Live</b> untuk mengirim perintah <code>UPDATE_CONFIG</code>.
+        </p>
+        <form id="config-form">
+          <label>overhead_enter_deg (°)
+            <input id="cfg-overhead_enter_deg" type="number" step="0.5" min="10" max="180" value="120" required>
+          </label>
+          <label>overhead_exit_deg (°)
+            <input id="cfg-overhead_exit_deg" type="number" step="0.5" min="5" max="175" value="105" required>
+          </label>
+          <label>face_down_deg (°)
+            <input id="cfg-face_down_deg" type="number" step="0.5" min="90" max="180" value="145" required>
+          </label>
+          <label>lying_limit_sec (detik)
+            <input id="cfg-lying_limit_sec" type="number" step="0.5" min="1" max="600" value="10" required>
+          </label>
+          <label>still_motion_max (m/s²)
+            <input id="cfg-still_motion_max" type="number" step="0.005" min="0.001" max="5" value="0.05" required>
+          </label>
+          <label>still_gyro_max (rad/s)
+            <input id="cfg-still_gyro_max" type="number" step="0.005" min="0.001" max="5" value="0.015" required>
+          </label>
+          <label>shake_motion_min (m/s²)
+            <input id="cfg-shake_motion_min" type="number" step="0.1" min="0.1" max="30" value="2.0" required>
+          </label>
+          <label>shake_gyro_min (rad/s)
+            <input id="cfg-shake_gyro_min" type="number" step="0.1" min="0.1" max="30" value="1.6" required>
+          </label>
+          <label>shake_confirm_windows (1 / 2)
+            <input id="cfg-shake_confirm_windows" type="number" step="1" min="1" max="5" value="2" required>
+          </label>
+          <label>alert_cooldown_sec (detik)
+            <input id="cfg-alert_cooldown_sec" type="number" step="0.5" min="1" max="120" value="8" required>
+          </label>
+          <label>edge_timeout_sec (detik)
+            <input id="cfg-edge_timeout_sec" type="number" step="0.5" min="2" max="120" value="8" required>
+          </label>
+          <label>roll_enter_deg (°)
+            <input id="cfg-roll_enter_deg" type="number" step="0.5" min="15" max="175" value="60" required>
+          </label>
+          <label class="checkbox-label">
+            <input id="cfg-use_roll" type="checkbox">
+            Aktifkan Deteksi Roll (use_roll)
+          </label>
+          <div class="row" style="grid-column: 1 / -1; margin-top: 6px;">
+            <button class="primary" id="apply-cfg-btn" type="submit" disabled>Terapkan Threshold Live</button>
+            <button id="reset-cfg-btn" type="button" disabled>Kembalikan Default</button>
+            <span id="cfg-feedback" class="muted"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="raw-box">
+        <h2 style="margin-bottom:8px">Angka Mentah Sensor Terakhir</h2>
+        <p class="muted" style="margin-top:0">
+          Letakkan HP Anak telungkup di meja untuk mengamati noise diam <code>motion_rms</code> &amp; <code>gyro_rms</code>.
+        </p>
+        <dl>
+          <dt>E1 overhead_deg</dt><dd id="raw-e1-overhead">—</dd>
+          <dt>E1 roll_deg</dt><dd id="raw-e1-roll">—</dd>
+          <dt>E1 motion_rms</dt><dd id="raw-e1-motion">—</dd>
+          <dt>E1 gyro_rms</dt><dd id="raw-e1-gyro">—</dd>
+          <dt>E2 motion_rms</dt><dd id="raw-e2-motion">—</dd>
+          <dt>E2 gyro_rms</dt><dd id="raw-e2-gyro">—</dd>
+        </dl>
+      </div>
+    </div>
+  </details>
+
+  <!-- RIWAYAT ALERT & PERUBAHAN CONFIG -->
+  <section class="card" aria-labelledby="h-logs">
+    <h2 id="h-logs">Log Riwayat Alert &amp; Perubahan Config</h2>
+    <table>
+      <thead>
+        <tr><th>Waktu</th><th>Kategori</th><th>Event / Target</th><th>Keterangan</th></tr>
+      </thead>
+      <tbody id="event-logs">
+        <tr><td colspan="4" class="muted">Belum ada riwayat event atau perubahan konfigurasi.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <p class="muted" id="topics"></p>
+</main>
+
+<script>
+"use strict";
+
+const DEFAULT_CONFIG = {
+  overhead_enter_deg: 120.0,
+  overhead_exit_deg: 105.0,
+  face_down_deg: 145.0,
+  still_motion_max: 0.05,
+  still_gyro_max: 0.015,
+  use_roll: false,
+  roll_enter_deg: 60.0,
+  roll_exit_deg: 45.0,
+  lying_limit_sec: 10.0,
+  max_window_dt_sec: 3.0,
+  shake_motion_min: 2.0,
+  shake_gyro_min: 1.6,
+  shake_confirm_windows: 2,
+  shake_cooldown_sec: 5.0,
+  alert_cooldown_sec: 8.0,
+  nag_interval_sec: 2.5,
+  edge_timeout_sec: 8.0,
+  stale_message_ms: 30000,
+  snooze_duration_sec: 30.0,
+};
+
+let activeConfig = { ...DEFAULT_CONFIG };
+
+const MAX_POINTS = 60;
+const STATUS_CLASS = {
+  POSISI_DUDUK_SEHAT: "ok",
+  DITARUH_TELUNGKUP: "info",
+  REBAHAN_AKTIF: "warn",
+  ALERT_MATA: "bad",
+  TEGURAN_ORTU: "purple",
+  SNOOZED: "info",
+  EDGE_OFFLINE: "off",
+  DISARMED: "off",
+  WAITING: "info",
+  OFFLINE: "off",
+};
+
+const $ = (id) => document.getElementById(id);
+let client = null;
+let base = "";
+let currentArmed = true;
+const edges = { edge1: null, edge2: null };
+const overheadHistory = [];
+const logs = [];
+
+function setPill(el, text, cls) {
+  el.textContent = text;
+  el.className = "pill " + cls;
+}
+
+function fmt(n, digits = 3) {
+  return typeof n === "number" && isFinite(n) ? n.toFixed(digits) : "—";
+}
+
+function clock(ms) {
+  return new Date(ms || Date.now()).toLocaleTimeString("id-ID");
+}
+
+function appendLog(category, badgeText, detail, atMs) {
+  logs.unshift({
+    time: clock(atMs),
+    category,
+    badgeText,
+    detail: String(detail || ""),
+  });
+  if (logs.length > 30) logs.length = 30;
+  const tbody = $("event-logs");
+  tbody.replaceChildren(
+    ...logs.map((entry) => {
+      const tr = document.createElement("tr");
+      for (const val of [entry.time, entry.category, entry.badgeText, entry.detail]) {
+        const td = document.createElement("td");
+        td.textContent = val;
+        tr.appendChild(td);
+      }
+      return tr;
+    })
+  );
+}
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("rebahguard-dashboard") || "{}");
+    for (const key of ["url", "project", "username"]) {
+      if (saved[key]) $(key).value = saved[key];
+    }
+  } catch (_) {}
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(
+      "rebahguard-dashboard",
+      JSON.stringify({
+        url: $("url").value.trim(),
+        project: $("project").value.trim(),
+        username: $("username").value.trim(),
+      })
+    );
+  } catch (_) {}
+}
+
+function setInteractiveEnabled(connected) {
+  $("disconnect-btn").disabled = !connected;
+  $("scold-btn").disabled = !connected;
+  $("snooze-btn").disabled = !connected;
+  $("reset-btn").disabled = !connected;
+  $("arm-toggle-btn").disabled = !connected;
+  $("apply-cfg-btn").disabled = !connected;
+  $("reset-cfg-btn").disabled = !connected;
+}
+
+function sendControl(command, params = {}) {
+  if (!client || !client.connected) return;
+  const payload = JSON.stringify({ command, params });
+  client.publish(`${base}/control`, payload, { qos: 1, retain: false });
+}
+
+function connect(event) {
+  event.preventDefault();
+  const url = $("url").value.trim();
+  const project = $("project").value.trim();
+  if (!/^wss?:\/\//.test(url)) {
+    setPill($("conn"), "URL harus diawali wss://", "bad");
+    return;
+  }
+  if (!/^[A-Za-z0-9_-]+$/.test(project)) {
+    setPill($("conn"), "PROJECT_ID tidak valid", "bad");
+    return;
+  }
+  if (typeof mqtt === "undefined") {
+    setPill($("conn"), "MQTT.js gagal dimuat", "bad");
+    return;
+  }
+  saveSettings();
+  if (client) client.end(true);
+
+  base = `rebahguard/${project}`;
+  $("topics").textContent =
+    `Subscribe: ${base}/edge/+/telemetry · ${base}/status · ${base}/config · ${base}/alerts/+ — Publish: ${base}/control`;
+  setPill($("conn"), "Menghubungkan…", "info");
+
+  client = mqtt.connect(url, {
+    username: $("username").value.trim() || undefined,
+    password: $("password").value || undefined,
+    clientId: `${project}-dashboard-${Math.random().toString(16).slice(2, 10)}`,
+    protocolVersion: 4,
+    reconnectPeriod: 3000,
+    connectTimeout: 10000,
+  });
+
+  client.on("connect", () => {
+    setPill($("conn"), "Terhubung", "ok");
+    client.subscribe(
+      [
+        `${base}/edge/+/telemetry`,
+        `${base}/status`,
+        `${base}/config`,
+        `${base}/alerts/parent`,
+        `${base}/alerts/child`,
+      ],
+      { qos: 1 }
+    );
+    $("settings").open = false;
+    setInteractiveEnabled(true);
+  });
+
+  client.on("reconnect", () => setPill($("conn"), "Menyambung ulang…", "warn"));
+  client.on("offline", () => {
+    setPill($("conn"), "Terputus", "off");
+    setInteractiveEnabled(false);
+  });
+  client.on("error", (err) => setPill($("conn"), `Error: ${err.message}`, "bad"));
+  client.on("message", onMessage);
+}
+
+function disconnect() {
+  if (client) client.end(true);
+  client = null;
+  setPill($("conn"), "Belum terhubung", "off");
+  setInteractiveEnabled(false);
+  $("settings").open = true;
+}
+
+function onMessage(topicStr, payload) {
+  let data;
+  try {
+    data = JSON.parse(payload.toString());
+  } catch (_) {
+    return;
+  }
+  if (!data || typeof data !== "object") return;
+
+  if (topicStr === `${base}/status`) {
+    renderStatus(data);
+    return;
+  }
+  if (topicStr === `${base}/config`) {
+    applyReceivedConfig(data);
+    return;
+  }
+  if (topicStr === `${base}/alerts/parent` || topicStr === `${base}/alerts/child`) {
+    appendLog("ALERT", `${data.target} · ${data.event}`, `${data.reason} (${fmt(data.lying_sec, 1)}s)`, data.at_ms);
+    return;
+  }
+  const match = topicStr.match(/\/edge\/(edge1|edge2)\/telemetry$/);
+  if (match && data.device_id === match[1]) {
+    updateEdge(match[1], data);
+  }
+}
+
+function renderStatus(data) {
+  const status = String(data.status || "WAITING");
+  const badge = $("status-badge");
+  badge.textContent = status;
+  badge.className = STATUS_CLASS[status] || "info";
+
+  const when = typeof data.at_ms === "number" ? ` (${clock(data.at_ms)})` : "";
+  $("status-reason").textContent = String(data.reason || "") + when;
+
+  currentArmed = Boolean(data.armed);
+  setPill($("armed-pill"), currentArmed ? "ARM: Aktif" : "ARM: Nonaktif", currentArmed ? "ok" : "off");
+  $("arm-toggle-btn").textContent = currentArmed ? "DISARM SISTEM" : "ARM SISTEM";
+
+  const nagging = Boolean(data.nagging_active);
+  setPill($("nag-pill"), nagging ? "Nagging: AKTIF (TEGURAN)" : "Nagging: Nonaktif", nagging ? "purple" : "off");
+
+  const elapsed = Number(data.lying_elapsed_sec) || 0;
+  const limit = Number(data.lying_limit_sec) || activeConfig.lying_limit_sec || 10;
+  const pct = Math.max(0, Math.min(100, (elapsed / Math.max(0.1, limit)) * 100));
+  $("lying-timer-text").textContent = `${elapsed.toFixed(1)}s / ${limit.toFixed(1)}s`;
+  $("lying-progress-bar").style.width = `${pct.toFixed(1)}%`;
+
+  if (typeof data.edge1_online === "boolean" && !data.edge1_online && !edges.edge1) {
+    setPill($("edge1-state"), "Offline", "off");
+  }
+  if (typeof data.edge2_online === "boolean" && !data.edge2_online && !edges.edge2) {
+    setPill($("edge2-state"), "Offline", "off");
+  }
+}
+
+function updateEdge(id, data) {
+  const overhead = Number(data.overhead_deg) || 0;
+  const roll = Number(data.roll_deg) || 0;
+  const motion = Number(data.motion_rms) || 0;
+  const gyro = Number(data.gyro_rms) || 0;
+
+  edges[id] = {
+    overhead,
+    roll,
+    motion,
+    gyro,
+    seq: data.sequence,
+    receivedAt: Date.now(),
+  };
+
+  if (id === "edge1") {
+    $("edge1-overhead").textContent = `${fmt(overhead, 1)} °`;
+    $("edge1-roll").textContent = `${fmt(roll, 1)} °`;
+    $("edge1-motion").textContent = `${fmt(motion, 4)} m/s²`;
+    $("edge1-gyro").textContent = `${fmt(gyro, 4)} rad/s`;
+    $("edge1-seq").textContent = String(data.sequence ?? "—");
+    $("edge1-seen").textContent = "Baru saja";
+    setPill($("edge1-state"), "Online", "ok");
+
+    $("raw-e1-overhead").textContent = `${fmt(overhead, 2)} °`;
+    $("raw-e1-roll").textContent = `${fmt(roll, 2)} °`;
+    $("raw-e1-motion").textContent = `${fmt(motion, 4)} m/s²`;
+    $("raw-e1-gyro").textContent = `${fmt(gyro, 4)} rad/s`;
+
+    overheadHistory.push(overhead);
+    if (overheadHistory.length > MAX_POINTS) overheadHistory.shift();
+    drawChart();
+  } else if (id === "edge2") {
+    $("edge2-motion").textContent = `${fmt(motion, 4)} m/s²`;
+    $("edge2-gyro").textContent = `${fmt(gyro, 4)} rad/s`;
+    $("edge2-seq").textContent = String(data.sequence ?? "—");
+    $("edge2-seen").textContent = "Baru saja";
+    setPill($("edge2-state"), "Online", "ok");
+
+    $("raw-e2-motion").textContent = `${fmt(motion, 4)} m/s²`;
+    $("raw-e2-gyro").textContent = `${fmt(gyro, 4)} rad/s`;
+
+    const shaking = motion >= activeConfig.shake_motion_min || gyro >= activeConfig.shake_gyro_min;
+    setPill(
+      $("edge2-shake-ready"),
+      shaking ? "Goyangan Terdeteksi!" : "Siap (Shake-to-Scold)",
+      shaking ? "warn" : "ok"
+    );
+  }
+}
+
+function applyReceivedConfig(cfg) {
+  activeConfig = { ...activeConfig, ...cfg };
+  const numericFields = [
+    "overhead_enter_deg",
+    "overhead_exit_deg",
+    "face_down_deg",
+    "lying_limit_sec",
+    "still_motion_max",
+    "still_gyro_max",
+    "shake_motion_min",
+    "shake_gyro_min",
+    "shake_confirm_windows",
+    "alert_cooldown_sec",
+    "edge_timeout_sec",
+    "roll_enter_deg",
+  ];
+  for (const key of numericFields) {
+    const el = $(`cfg-${key}`);
+    if (el && typeof activeConfig[key] === "number") {
+      el.value = String(activeConfig[key]);
+    }
+  }
+  $("cfg-use_roll").checked = Boolean(activeConfig.use_roll);
+  $("legend-enter").textContent = `${activeConfig.overhead_enter_deg}°`;
+  $("legend-exit").textContent = `${activeConfig.overhead_exit_deg}°`;
+  drawChart();
+  appendLog(
+    "CONFIG",
+    "Sinkronisasi Config",
+    `enter=${activeConfig.overhead_enter_deg}°, exit=${activeConfig.overhead_exit_deg}°, limit=${activeConfig.lying_limit_sec}s, use_roll=${activeConfig.use_roll}`
+  );
+}
+
+function submitConfigForm(event) {
+  event.preventDefault();
+  const enterDeg = Number($("cfg-overhead_enter_deg").value);
+  const exitDeg = Number($("cfg-overhead_exit_deg").value);
+  if (exitDeg >= enterDeg) {
+    $("cfg-feedback").textContent = "Error: overhead_exit_deg harus < overhead_enter_deg!";
+    return;
+  }
+  const params = {
+    overhead_enter_deg: enterDeg,
+    overhead_exit_deg: exitDeg,
+    face_down_deg: Number($("cfg-face_down_deg").value),
+    lying_limit_sec: Number($("cfg-lying_limit_sec").value),
+    still_motion_max: Number($("cfg-still_motion_max").value),
+    still_gyro_max: Number($("cfg-still_gyro_max").value),
+    shake_motion_min: Number($("cfg-shake_motion_min").value),
+    shake_gyro_min: Number($("cfg-shake_gyro_min").value),
+    shake_confirm_windows: parseInt($("cfg-shake_confirm_windows").value, 10),
+    alert_cooldown_sec: Number($("cfg-alert_cooldown_sec").value),
+    edge_timeout_sec: Number($("cfg-edge_timeout_sec").value),
+    roll_enter_deg: Number($("cfg-roll_enter_deg").value),
+    use_roll: $("cfg-use_roll").checked,
+  };
+  sendControl("UPDATE_CONFIG", params);
+  $("cfg-feedback").textContent = `UPDATE_CONFIG dikirim (${clock(Date.now())})`;
+}
+
+function resetConfigToDefault() {
+  applyReceivedConfig(DEFAULT_CONFIG);
+  sendControl("UPDATE_CONFIG", DEFAULT_CONFIG);
+  $("cfg-feedback").textContent = "Default config dikirim ke server.";
+}
+
+function tick() {
+  const timeoutMs = (activeConfig.edge_timeout_sec || 8) * 1000;
+  for (const id of ["edge1", "edge2"]) {
+    const edge = edges[id];
+    if (!edge) continue;
+    const age = Date.now() - edge.receivedAt;
+    $(`${id}-seen`).textContent = `${Math.round(age / 1000)} detik lalu`;
+    if (age > timeoutMs) {
+      setPill($(`${id}-state`), "Offline (timeout)", "off");
+    }
+  }
+}
+
+function drawChart() {
+  const canvas = $("chart");
+  const ratio = window.devicePixelRatio || 1;
+  const width = canvas.clientWidth || 600;
+  const height = canvas.clientHeight || 250;
+  canvas.width = width * ratio;
+  canvas.height = height * ratio;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(ratio, ratio);
+
+  const css = getComputedStyle(document.documentElement);
+  const color = (name) => css.getPropertyValue(name).trim();
+
+  const pad = { left: 42, right: 12, top: 12, bottom: 24 };
+  const maxY = 180;
+  const x = (i) => pad.left + (i / (MAX_POINTS - 1)) * (width - pad.left - pad.right);
+  const y = (v) => pad.top + (1 - v / maxY) * (height - pad.top - pad.bottom);
+
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.fillStyle = color("--muted");
+  ctx.strokeStyle = color("--line");
+  ctx.lineWidth = 1;
+
+  for (const deg of [0, 45, 90, 135, 180]) {
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y(deg));
+    ctx.lineTo(width - pad.right, y(deg));
+    ctx.stroke();
+    ctx.fillText(`${deg}°`, 4, y(deg) + 4);
+  }
+
+  // Garis putus-putus histeresis: overhead_enter_deg & overhead_exit_deg
+  ctx.setLineDash([6, 4]);
+  ctx.lineWidth = 1.8;
+
+  ctx.strokeStyle = color("--enter-line");
+  ctx.beginPath();
+  ctx.moveTo(pad.left, y(activeConfig.overhead_enter_deg));
+  ctx.lineTo(width - pad.right, y(activeConfig.overhead_enter_deg));
+  ctx.stroke();
+
+  ctx.strokeStyle = color("--exit-line");
+  ctx.beginPath();
+  ctx.moveTo(pad.left, y(activeConfig.overhead_exit_deg));
+  ctx.lineTo(width - pad.right, y(activeConfig.overhead_exit_deg));
+  ctx.stroke();
+
+  ctx.setLineDash([]);
+
+  if (overheadHistory.length > 0) {
+    const offset = MAX_POINTS - overheadHistory.length;
+    ctx.strokeStyle = color("--edge1");
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    overheadHistory.forEach((v, i) => {
+      const clamped = Math.max(0, Math.min(180, v));
+      if (i === 0) ctx.moveTo(x(offset + i), y(clamped));
+      else ctx.lineTo(x(offset + i), y(clamped));
+    });
+    ctx.stroke();
+  }
+}
+
+$("conn-form").addEventListener("submit", connect);
+$("disconnect-btn").addEventListener("click", disconnect);
+$("scold-btn").addEventListener("click", () => sendControl("SCOLD"));
+$("snooze-btn").addEventListener("click", () => sendControl("SNOOZE"));
+$("reset-btn").addEventListener("click", () => sendControl("RESET"));
+$("arm-toggle-btn").addEventListener("click", () => sendControl(currentArmed ? "DISARM" : "ARM"));
+$("config-form").addEventListener("submit", submitConfigForm);
+$("reset-cfg-btn").addEventListener("click", resetConfigToDefault);
+window.addEventListener("resize", drawChart);
+loadSettings();
+
+async function applyLocalConfig() {
+  try {
+    const response = await fetch("/config.json", { cache: "no-store" });
+    if (!response.ok) return;
+    const config = await response.json();
+    if (!/^[A-Za-z0-9_-]+$/.test(config.project_id || "")) return;
+    $("project").value = config.project_id;
+    if (config.websocket_url) $("url").value = config.websocket_url;
+    $("username").value = "";
+    $("password").value = "";
+    if (config.automatic_connection) {
+      $("conn-form").requestSubmit();
+    } else {
+      $("settings").open = true;
+      setPill($("conn"), "Atur kredensial browser MQTT", "info");
+    }
+  } catch (_) {}
+}
+
+applyLocalConfig();
+drawChart();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

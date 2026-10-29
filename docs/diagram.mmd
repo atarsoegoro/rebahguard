@@ -1,0 +1,25 @@
+flowchart LR
+  subgraph LOCAL["Lingkungan Pengguna (Wi-Fi / Hotspot)"]
+    subgraph EDGE1["NODE 1 - Edge 1: HP Anak"]
+      A1["Accelerometer"] --> P1["3-Stage Processing:<br/>overhead_deg, roll_deg, motion_rms"]
+      G1["Gyroscope"] --> P1
+      P1 --> PUB1["Publisher Telemetry &<br/>Subscriber alerts/child"]
+    end
+    subgraph EDGE2["NODE 2 - Edge 2: HP Orang Tua"]
+      A2["Accelerometer"] --> P2["3-Stage Processing:<br/>Shake-to-Scold"]
+      G2["Gyroscope"] --> P2
+      P2 --> PUB2["Publisher Telemetry &<br/>Subscriber alerts/parent"]
+    end
+    DET["NODE 3 - RebahGuard Posture Service (server.py)"]
+  end
+  subgraph CLOUD["MQTT BROKER"]
+    MQTT["HiveMQ Broker: TLS 8883 / WSS 8884"]
+  end
+  PUB1 -->|"Publish edge/edge1/telemetry"| MQTT
+  PUB2 -->|"Publish edge/edge2/telemetry"| MQTT
+  MQTT -->|"Subscribe edge/+/telemetry"| DET
+  DET -->|"Publish alerts/child & alerts/parent (retain=False)"| MQTT
+  MQTT -->|"Deliver ALERT_MATA / TEGURAN_ORTU / CLEAR"| PUB1
+  MQTT -->|"Deliver ALERT_MATA"| PUB2
+  DET -->|"Publish status & config (retain=True)"| MQTT
+  MQTT <-->|"WSS Telemetry, Status, Config & Control"| WEB["RebahGuard Web Dashboard"]

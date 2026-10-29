@@ -1,0 +1,24 @@
+sequenceDiagram
+  participant E1 as Edge 1 - HP Anak
+  participant E2 as Edge 2 - HP Orang Tua
+  participant Broker as Cloud MQTT Broker
+  participant S as Posture Service (RebahDetector)
+  S->>Broker: SUBSCRIBE rebahguard/<PROJECT_ID>/edge/+/telemetry & control
+  E1->>Broker: SUBSCRIBE rebahguard/<PROJECT_ID>/alerts/child
+  E2->>Broker: SUBSCRIBE rebahguard/<PROJECT_ID>/alerts/parent
+  E1->>Broker: PUBLISH edge1 telemetry (overhead_deg=135°, motion_rms=0.20)
+  Broker-->>S: Telemetry Edge 1
+  S->>S: Akumulasi durasi rebahan >= lying_limit_sec -> ALERT_MATA
+  S->>Broker: PUBLISH alerts/parent & alerts/child (ALERT_MATA, retain=False)
+  Broker-->>E2: Notifikasi & getar ALERT_MATA
+  Broker-->>E1: Peringatan awal ALERT_MATA
+  E2->>Broker: PUBLISH edge2 telemetry (2x goyangan Shake-to-Scold)
+  Broker-->>S: Telemetry Edge 2
+  S->>S: Konfirmasi Shake-to-Scold -> TEGURAN_ORTU
+  S->>Broker: PUBLISH alerts/child (TEGURAN_ORTU, retain=False)
+  Broker-->>E1: Getar kuat & nada peringatan TEGURAN_ORTU
+  E1->>Broker: PUBLISH edge1 telemetry (overhead_deg=50° duduk sehat)
+  Broker-->>S: Telemetry Edge 1
+  S->>S: Transisi ke POSISI_DUDUK_SEHAT & matikan nagging
+  S->>Broker: PUBLISH alerts/child (CLEAR, retain=False)
+  Broker-->>E1: Hentikan getaran & bersihkan notifikasi

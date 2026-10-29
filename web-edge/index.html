@@ -1,0 +1,929 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RebahGuard · HP Edge</title>
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@5.16.1/dist/mqtt.min.js"></script>
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: #14241f;
+      background: #f2f6f4;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 16px; }
+    main { max-width: 640px; margin: 0 auto; }
+    h1 { font-size: 1.55rem; margin: 6px 0; color: #0f5132; }
+    p { line-height: 1.5; }
+    .card {
+      background: #fff;
+      border: 1px solid #d5e2dc;
+      border-radius: 14px;
+      padding: 16px;
+      margin: 14px 0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+    label { display: block; margin: 10px 0; font-weight: 600; font-size: 0.94rem; }
+    label.inline-check {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    label.inline-check input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      margin: 0;
+      accent-color: #0f766e;
+    }
+    input, select {
+      display: block;
+      width: 100%;
+      margin-top: 4px;
+      padding: 11px;
+      border: 1px solid #b7c9c1;
+      border-radius: 8px;
+      font: inherit;
+      background: #fff;
+      color: inherit;
+    }
+    button {
+      border: 0;
+      background: #0f766e;
+      color: #fff;
+      border-radius: 9px;
+      padding: 12px 18px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled { background: #9ca7b2; cursor: default; }
+    .muted { color: #52665e; font-size: 0.9rem; }
+    .status { font-weight: 700; margin-bottom: 8px; }
+    dl { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin: 10px 0; }
+    dt { color: #52665e; font-size: 0.92rem; }
+    dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 700; }
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 0.81rem;
+      background: #f1f5f4;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .alert-banner {
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-weight: 700;
+      margin: 10px 0;
+      border: 1px solid transparent;
+    }
+    .alert-safe {
+      background: #dcfce7;
+      color: #166534;
+      border-color: #86efac;
+    }
+    .alert-warn {
+      background: #fef3c7;
+      color: #92400e;
+      border-color: #fde68a;
+    }
+    .alert-danger {
+      background: #fee2e2;
+      color: #991b1b;
+      border-color: #fca5a5;
+    }
+    .mode-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 12px 0;
+    }
+    .mode-actions button { background: #1e293b; }
+    .sensor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .sensor-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0;
+      padding: 12px;
+      border: 1px solid #dce2e8;
+      border-radius: 9px;
+      font-weight: 500;
+    }
+    .sensor-option input[type=checkbox] { width: auto; margin: 0; accent-color: #0f766e; }
+    .sensor-option small { display: block; color: #546476; font-weight: 400; }
+    .play-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .play-actions button.secondary { background: #e9eff6; color: #15324f; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>RebahGuard · HP Edge</h1>
+  <div class="mode-actions">
+    <span class="muted" id="modeLabel">Mode: RebahGuard</span>
+    <button id="modeToggle" type="button" aria-expanded="false" aria-controls="playgroundView">Buka Sensor Playground</button>
+  </div>
+  <p id="legacyIntro">
+    Jadikan HP ini <strong>edge device RebahGuard nyata</strong> tanpa Termux.
+    Halaman membaca <strong>accelerometer dan gyroscope</strong> melalui <code>DeviceMotionEvent</code>,
+    menghitung <code>overhead_deg</code>, <code>roll_deg</code>, <code>motion_rms</code> (bebas bias), serta <code>gyro_rms</code>,
+    lalu terhubung dua arah ke MQTT Broker.
+  </p>
+
+  <div id="rebahguardView">
+    <section class="card">
+      <form id="setup">
+        <label>Peran perangkat
+          <select id="role">
+            <option value="edge1">Edge 1 — HP Anak (Deteksi Postur + Terima Teguran)</option>
+            <option value="edge2">Edge 2 — HP Orang Tua (Shake-to-Scold + Terima Alert)</option>
+          </select>
+        </label>
+        <label>PROJECT_ID (harus sama dengan server laptop)
+          <input id="project" value="kelas_iot_demo" required pattern="[A-Za-z0-9_-]+">
+        </label>
+        <label>MQTT WebSocket URL (WSS)
+          <input id="broker" value="wss://broker.hivemq.com:8884/mqtt" required>
+        </label>
+        <label class="inline-check">
+          <input id="invertZ" type="checkbox">
+          <span>Invert Sumbu Z (Aktifkan khusus Safari iPhone/iOS)</span>
+        </label>
+        <details>
+          <summary>Broker pribadi (opsional)</summary>
+          <label>Username<input id="username" autocomplete="username"></label>
+          <label>Password<input id="password" type="password" autocomplete="off"></label>
+        </details>
+        <p class="muted">
+          Harus dibuka lewat <strong>HTTPS</strong>. Saat klik <b>Mulai membaca sensor</b>, izin sensor gerak,
+          <i>Web Audio</i>, dan <i>Screen Wake Lock</i> akan diaktifkan otomatis.
+        </p>
+        <div class="play-actions">
+          <button id="start" type="submit">Mulai membaca sensor</button>
+          <button id="stop" type="button" disabled>Stop</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="status" id="status" role="status">Belum berjalan</div>
+      <div id="alertBanner" class="alert-banner alert-safe">Status Aman — Belum ada peringatan postur / teguran.</div>
+      <dl>
+        <dt>Sudut Overhead (overhead_deg)</dt><dd id="overhead">— °</dd>
+        <dt>Sudut Roll (roll_deg)</dt><dd id="roll">— °</dd>
+        <dt>Gerakan Dinamis (motion_rms)</dt><dd id="motion">— m/s²</dd>
+        <dt>Aktivitas Gyro (gyro_rms)</dt><dd id="gyro">— rad/s</dd>
+        <dt>Event motion diterima</dt><dd id="events">0</dd>
+        <dt>Accelerometer tersedia</dt><dd id="accelEvents">0</dd>
+        <dt>Gyroscope tersedia</dt><dd id="gyroEvents">0</dd>
+        <dt>Sampel valid terkumpul</dt><dd id="samples">0</dd>
+        <dt>Screen Wake Lock</dt><dd id="wakeLockState">Nonaktif</dd>
+        <dt>Pesan MQTT terkirim</dt><dd id="sent">0</dd>
+      </dl>
+    </section>
+
+    <section class="card">
+      <strong>Log Aktivitas &amp; Alert Dua Arah</strong>
+      <pre id="log">Menunggu start...</pre>
+    </section>
+  </div>
+
+  <div id="playgroundView" hidden>
+    <p class="muted">Kirim pembacaan sensor HP asli ke topic MQTT pilihanmu. Tidak perlu membuat project; bisa dipakai di iPhone Safari atau Android Chrome.</p>
+    <section class="card">
+      <form id="playgroundForm">
+        <label>Device ID
+          <input id="pgDevice" value="phone-1" required pattern="[A-Za-z0-9_-]+" autocomplete="off">
+        </label>
+        <label>MQTT WebSocket URL (WSS)
+          <input id="pgBroker" value="wss://broker.hivemq.com:8884/mqtt" type="url" required>
+        </label>
+        <label>MQTT Topic (bebas, harus unik)
+          <input id="pgTopic" value="iot/kelas-demo/phone-1/telemetry" required autocomplete="off">
+        </label>
+        <label>Publish interval
+          <select id="pgInterval">
+            <option value="1000">1 detik</option>
+            <option value="2000" selected>2 detik</option>
+            <option value="5000">5 detik</option>
+          </select>
+        </label>
+        <details>
+          <summary>MQTT username / password (jika diperlukan)</summary>
+          <label>Username<input id="pgUsername" autocomplete="username"></label>
+          <label>Password<input id="pgPassword" type="password" autocomplete="off"></label>
+        </details>
+        <fieldset style="border:0;padding:0;margin:14px 0">
+          <legend style="font-weight:700">Pilih sensor</legend>
+          <div class="sensor-grid">
+            <label class="sensor-option"><input id="pgAccel" type="checkbox" checked><span>Accelerometer<small>Percepatan + RMS</small></span></label>
+            <label class="sensor-option"><input id="pgGyro" type="checkbox" checked><span>Gyroscope<small>Rotasi / detik</small></span></label>
+            <label class="sensor-option"><input id="pgOrientation" type="checkbox"><span>Orientation<small>Sudut alpha, beta, gamma</small></span></label>
+            <label class="sensor-option"><input id="pgGps" type="checkbox"><span>GPS location<small>Latitude, longitude</small></span></label>
+            <label class="sensor-option"><input id="pgMic" type="checkbox"><span>Microphone<small>Audio RMS saja</small></span></label>
+          </div>
+        </fieldset>
+        <div class="play-actions">
+          <button id="pgStart" type="submit">Start sensor sender</button>
+          <button id="pgStop" type="button" disabled class="secondary">Stop</button>
+          <button id="pgCopy" type="button" class="secondary">Copy MQTT topic</button>
+        </div>
+      </form>
+    </section>
+    <section class="card">
+      <div id="pgStatus" class="status" role="status">Belum berjalan</div>
+      <dl>
+        <dt>Motion events</dt><dd id="pgMotionCount">0</dd>
+        <dt>Orientation events</dt><dd id="pgOrientationCount">0</dd>
+        <dt>GPS updates</dt><dd id="pgGpsCount">0</dd>
+        <dt>Publish MQTT sukses</dt><dd id="pgSent">0</dd>
+      </dl>
+      <h2 style="font-size:1rem">Last sensor payload</h2>
+      <pre id="pgPayload">Belum ada data. Pilih sensor lalu tekan Start.</pre>
+    </section>
+    <section class="card">
+      <strong>Sensor / MQTT log</strong>
+      <pre id="pgLog">Menunggu start...</pre>
+    </section>
+  </div>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+// Window pengiriman 1200 ms, minimal 5 sampel
+const WINDOW_MS = 1200;
+const MIN_SAMPLES = 5;
+const MAX_SAMPLES = 250;
+
+let client = null, active = false, connected = false, samples = [];
+let sequence = 0, bootId = "", lastPublish = 0, lastSample = 0;
+let motionEvents = 0, accelEvents = 0, gyroEvents = 0;
+let project = "", role = "", watcher = null;
+let audioCtx = null;
+let wakeLockSentinel = null;
+
+// Auto-detect iOS / iPadOS untuk default Invert Sumbu Z
+const isIOS =
+  /(iPhone|iPad|iPod)/i.test(navigator.userAgent || "") ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+$("invertZ").checked = isIOS;
+
+function log(message) {
+  const line = new Date().toLocaleTimeString("id-ID") + " — " + message;
+  $("log").textContent = line + "\n" + $("log").textContent.slice(0, 1800);
+}
+
+function status(message) {
+  $("status").textContent = message;
+}
+
+function setBanner(text, level) {
+  const el = $("alertBanner");
+  el.textContent = text;
+  el.className = "alert-banner " + (level === "danger" ? "alert-danger" : level === "warn" ? "alert-warn" : "alert-safe");
+}
+
+function finite3(x, y, z) {
+  return [x, y, z].every((n) => typeof n === "number" && Number.isFinite(n));
+}
+
+function clamp(val, low, high) {
+  return Math.max(low, Math.min(high, val));
+}
+
+function round4(val) {
+  return Math.round(val * 10000) / 10000;
+}
+
+// Unlock AudioContext tepat di dalam klik tombol Start
+function ensureAudioUnlocked() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!audioCtx) audioCtx = new Ctx();
+    if (audioCtx.state === "suspended") {
+      audioCtx.resume().catch(() => {});
+    }
+  } catch (_) {}
+}
+
+function playAlertTone(kind) {
+  try {
+    if (!audioCtx) ensureAudioUnlocked();
+    if (!audioCtx) return;
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    if (kind === "TEGURAN_ORTU") {
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.setValueAtTime(660, now + 0.18);
+      osc.frequency.setValueAtTime(880, now + 0.36);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+      osc.start(now);
+      osc.stop(now + 0.65);
+    } else {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(620, now);
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    }
+  } catch (_) {}
+}
+
+async function acquireWakeLock() {
+  if (!("wakeLock" in navigator) || !active) return;
+  try {
+    wakeLockSentinel = await navigator.wakeLock.request("screen");
+    $("wakeLockState").textContent = "Aktif";
+    wakeLockSentinel.addEventListener("release", () => {
+      if ($("wakeLockState")) $("wakeLockState").textContent = "Dilepas";
+    });
+  } catch (_) {
+    $("wakeLockState").textContent = "Tidak didukung / ditolak";
+  }
+}
+
+async function releaseWakeLock() {
+  if (wakeLockSentinel) {
+    try {
+      await wakeLockSentinel.release();
+    } catch (_) {}
+    wakeLockSentinel = null;
+  }
+  $("wakeLockState").textContent = "Nonaktif";
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && active) {
+    acquireWakeLock();
+  }
+});
+
+// 100% identik dengan shared/processing.py
+function extractFeatures(windowSamples) {
+  const n = windowSamples.length;
+  let sumAx = 0, sumAy = 0, sumAz = 0;
+  const magnitudes = [];
+  let sumGyroSq = 0;
+
+  for (let i = 0; i < n; i++) {
+    const [ax, ay, az] = windowSamples[i].accel;
+    const [gx, gy, gz] = windowSamples[i].gyro;
+    sumAx += ax;
+    sumAy += ay;
+    sumAz += az;
+    magnitudes.push(Math.hypot(ax, ay, az));
+    sumGyroSq += gx * gx + gy * gy + gz * gz;
+  }
+
+  // Processing A: Gravity Orientation Smoothing
+  const axMean = sumAx / n;
+  const ayMean = sumAy / n;
+  const azMean = sumAz / n;
+  const gNorm = Math.max(1e-6, Math.hypot(axMean, ayMean, azMean));
+  const overheadDeg = (Math.acos(clamp(azMean / gNorm, -1.0, 1.0)) * 180) / Math.PI;
+  const rollDeg = (Math.atan2(Math.abs(axMean), Math.hypot(ayMean, azMean)) * 180) / Math.PI;
+
+  // Processing B: Mean-Centered Dynamic Motion RMS (bebas bias kalibrasi 9.81)
+  const meanMag = magnitudes.reduce((a, b) => a + b, 0) / n;
+  let devSqSum = 0;
+  for (let i = 0; i < n; i++) {
+    const diff = magnitudes[i] - meanMag;
+    devSqSum += diff * diff;
+  }
+  const motionRms = Math.sqrt(devSqSum / n);
+
+  // Processing C: Gyroscope Micro-Activity RMS
+  const gyroRms = Math.sqrt(sumGyroSq / n);
+
+  return {
+    overhead_deg: round4(overheadDeg),
+    roll_deg: round4(rollDeg),
+    motion_rms: round4(motionRms),
+    gyro_rms: round4(gyroRms),
+  };
+}
+
+function onMotion(event) {
+  if (!active) return;
+  motionEvents++;
+  $("events").textContent = String(motionEvents);
+  const a = event.accelerationIncludingGravity;
+  const r = event.rotationRate;
+  const hasAccel = !!a && finite3(a.x, a.y, a.z);
+  const hasGyro = !!r && finite3(r.alpha, r.beta, r.gamma);
+  if (hasAccel) {
+    accelEvents++;
+    $("accelEvents").textContent = String(accelEvents);
+  }
+  if (hasGyro) {
+    gyroEvents++;
+    $("gyroEvents").textContent = String(gyroEvents);
+  }
+  if (!hasAccel || !hasGyro) return;
+
+  const now = performance.now();
+  const zSign = $("invertZ").checked ? -1 : 1;
+  const RAD = Math.PI / 180;
+
+  samples.push({
+    time: now,
+    accel: [a.x, a.y, a.z * zSign],
+    gyro: [r.alpha * RAD, r.beta * RAD, r.gamma * RAD],
+  });
+  lastSample = now;
+  $("samples").textContent = String(Number($("samples").textContent) + 1);
+
+  if (samples.length > MAX_SAMPLES) samples.shift();
+  if (now - lastPublish < WINDOW_MS || samples.length < MIN_SAMPLES) return;
+
+  const processed = extractFeatures(samples);
+  $("overhead").textContent = `${processed.overhead_deg.toFixed(1)} °`;
+  $("roll").textContent = `${processed.roll_deg.toFixed(1)} °`;
+  $("motion").textContent = `${processed.motion_rms.toFixed(4)} m/s²`;
+  $("gyro").textContent = `${processed.gyro_rms.toFixed(4)} rad/s`;
+
+  lastPublish = now;
+  samples = [];
+  if (!connected) return;
+
+  const payload = {
+    device_id: role,
+    boot_id: bootId,
+    sequence: sequence++,
+    sent_at_ms: Date.now(),
+    overhead_deg: processed.overhead_deg,
+    roll_deg: processed.roll_deg,
+    motion_rms: processed.motion_rms,
+    gyro_rms: processed.gyro_rms,
+  };
+
+  const telemetryTopic = `rebahguard/${project}/edge/${role}/telemetry`;
+  client.publish(telemetryTopic, JSON.stringify(payload), { qos: 1, retain: false }, (error) => {
+    if (error) log("MQTT publish gagal: " + error.message);
+    else $("sent").textContent = String(Number($("sent").textContent) + 1);
+  });
+}
+
+function handleIncomingAlert(alert) {
+  if (!alert || typeof alert !== "object") return;
+  const ev = String(alert.event || "");
+  const reason = String(alert.reason || "");
+  const lyingSec = typeof alert.lying_sec === "number" ? `${alert.lying_sec.toFixed(1)}s` : "";
+
+  if (ev === "CLEAR") {
+    setBanner(`Posisi Sehat / Aman — ${reason}`, "safe");
+    if (navigator.vibrate) navigator.vibrate(0);
+    log(`CLEAR diterima: ${reason}`);
+    return;
+  }
+
+  if (ev === "TEGURAN_ORTU") {
+    setBanner(`TEGURAN ORTU! Segera duduk tegak! (${lyingSec}) — ${reason}`, "danger");
+    if (navigator.vibrate) navigator.vibrate([400, 120, 400, 120, 500]);
+    playAlertTone("TEGURAN_ORTU");
+    log(`TEGURAN_ORTU: ${reason}`);
+    return;
+  }
+
+  if (ev === "ALERT_MATA") {
+    const prefix = role === "edge2" ? "Anak Rebahan Terlalu Lama!" : "Peringatan Mata & Postur!";
+    setBanner(`${prefix} (${lyingSec}) — ${reason}`, "warn");
+    if (navigator.vibrate) navigator.vibrate([250, 100, 250]);
+    playAlertTone("ALERT_MATA");
+    log(`ALERT_MATA: ${reason}`);
+  }
+}
+
+function stop() {
+  active = false;
+  connected = false;
+  window.removeEventListener("devicemotion", onMotion);
+  if (watcher !== null) clearInterval(watcher);
+  watcher = null;
+  releaseWakeLock();
+  if (client) client.end(true);
+  client = null;
+  $("start").disabled = false;
+  $("stop").disabled = true;
+  status("Berhenti");
+}
+
+async function start(event) {
+  event.preventDefault();
+  if (active) return;
+  if (!window.isSecureContext) {
+    status("Butuh HTTPS. Buka halaman dari hosting HTTPS (bukan HTTP IP lokal).");
+    return;
+  }
+  if (typeof DeviceMotionEvent === "undefined") {
+    status("DeviceMotion tidak didukung browser/perangkat ini.");
+    return;
+  }
+  if (typeof mqtt === "undefined") {
+    status("MQTT.js gagal dimuat. Periksa koneksi internet.");
+    return;
+  }
+
+  role = $("role").value;
+  project = $("project").value.trim();
+  const broker = normalizeMqttWss($("broker").value.trim());
+  $("broker").value = broker;
+
+  if (!/^[A-Za-z0-9_-]+$/.test(project) || !/^wss:\/\//.test(broker)) {
+    status("PROJECT_ID tidak valid atau URL harus memakai wss://");
+    return;
+  }
+
+  // 1. Unlock AudioContext langsung saat klik tombol Start
+  ensureAudioUnlocked();
+
+  // 2. Minta izin DeviceMotionEvent untuk iOS Safari
+  try {
+    if (typeof DeviceMotionEvent.requestPermission === "function") {
+      const permission = await DeviceMotionEvent.requestPermission();
+      if (permission !== "granted") throw new Error("Izin motion sensor ditolak");
+    }
+  } catch (err) {
+    status("Izin sensor gagal: " + err.message);
+    return;
+  }
+
+  active = true;
+  connected = false;
+  samples = [];
+  sequence = 0;
+  bootId = crypto.randomUUID();
+  lastSample = 0;
+  lastPublish = performance.now();
+  motionEvents = 0;
+  accelEvents = 0;
+  gyroEvents = 0;
+
+  // 3. Aktifkan Screen Wake Lock API
+  acquireWakeLock();
+
+  $("events").textContent = "0";
+  $("accelEvents").textContent = "0";
+  $("gyroEvents").textContent = "0";
+  $("samples").textContent = "0";
+  $("sent").textContent = "0";
+  $("overhead").textContent = "— °";
+  $("roll").textContent = "— °";
+  $("motion").textContent = "— m/s²";
+  $("gyro").textContent = "— rad/s";
+  setBanner("Status Aman — Monitoring postur aktif.", "safe");
+  $("start").disabled = true;
+  $("stop").disabled = false;
+
+  const namespace = `rebahguard/${project}`;
+  const alertTopic = role === "edge1" ? `${namespace}/alerts/child` : `${namespace}/alerts/parent`;
+
+  client = mqtt.connect(broker, {
+    clientId: `${project}-${role}-browser-${crypto.randomUUID().slice(0, 8)}`,
+    username: $("username").value || undefined,
+    password: $("password").value || undefined,
+    reconnectPeriod: 3000,
+    connectTimeout: 10000,
+  });
+
+  client.on("connect", () => {
+    connected = true;
+    status(`Sensor aktif · MQTT terhubung (${role})`);
+    client.subscribe(alertTopic, { qos: 1 });
+    log(`Connected. Publish ke ${namespace}/edge/${role}/telemetry · Subscribe ke ${alertTopic}`);
+  });
+
+  client.on("offline", () => {
+    connected = false;
+    status("Koneksi MQTT terputus, mencoba menyambung ulang...");
+  });
+
+  client.on("error", (error) => {
+    status("MQTT error: " + error.message);
+    log(error.message);
+  });
+
+  client.on("message", (topicStr, payload) => {
+    if (topicStr !== alertTopic) return;
+    try {
+      const alert = JSON.parse(payload.toString());
+      handleIncomingAlert(alert);
+    } catch (_) {}
+  });
+
+  window.addEventListener("devicemotion", onMotion);
+  status("Menunggu sensor & MQTT...");
+  log("Izin sensor diterima; menunggu pembacaan fisik.");
+
+  watcher = setInterval(() => {
+    if (!active) return;
+    if (!motionEvents) {
+      status("0 motion events: cek HTTPS, setelan izin sensor gerak di browser HP.");
+    } else if (!accelEvents) {
+      status("Event ada, tapi accelerometer tidak tersedia di browser ini.");
+    } else if (!gyroEvents) {
+      status("Accelerometer tersedia, tetapi gyroscope/rotationRate tidak tersedia. Coba Termux:API.");
+    } else if (!lastSample || performance.now() - lastSample > 6000) {
+      status("Pembacaan sensor terhenti. Pertahankan layar & tab tetap aktif.");
+    } else if (!connected) {
+      status("Sensor OK, tetapi MQTT belum tersambung. Periksa broker WSS.");
+    }
+  }, 2500);
+}
+
+$("setup").addEventListener("submit", start);
+$("stop").addEventListener("click", stop);
+
+const params = new URLSearchParams(location.search);
+if (/^[A-Za-z0-9_-]+$/.test(params.get("project") || "")) $("project").value = params.get("project");
+if (["edge1", "edge2"].includes(params.get("role"))) $("role").value = params.get("role");
+window.addEventListener("pagehide", stop);
+
+/* ===== SENSOR PLAYGROUND ===== */
+let pgClient = null, pgActive = false, pgConnected = false, pgTimer = null;
+let pgGpsWatcher = null, pgMicStream = null, pgAudioContext = null, pgAnalyser = null;
+let pgDevice = "", pgTopic = "", pgSeq = 0, pgSent = 0;
+let pgLatest = {}, pgMotionSamples = [], pgLastMotion = 0, pgLastOrientation = 0, pgLastGps = 0;
+let pgCounts = { motion: 0, orientation: 0, gps: 0 };
+const pgRound = (value) => Math.round(value * 10000) / 10000;
+const pgValid3 = (values) => values.every((v) => typeof v === "number" && Number.isFinite(v));
+
+function pgLog(message) {
+  const line = new Date().toLocaleTimeString("id-ID") + " — " + message;
+  $("pgLog").textContent = line + "\n" + $("pgLog").textContent.slice(0, 1500);
+}
+function pgStatus(message) { $("pgStatus").textContent = message; }
+
+function normalizeMqttWss(value) {
+  const input = value.trim().replace(/\/+$/, "");
+  const defaults = {
+    "wss://broker.emqx.io": "wss://broker.emqx.io:8084/mqtt",
+    "wss://broker.emqx.io:8084": "wss://broker.emqx.io:8084/mqtt",
+    "wss://broker.hivemq.com": "wss://broker.hivemq.com:8884/mqtt",
+    "wss://broker.hivemq.com:8884": "wss://broker.hivemq.com:8884/mqtt",
+  };
+  return defaults[input.toLowerCase()] || input;
+}
+
+function pgMotionEvent(event) {
+  if (!pgActive) return;
+  pgCounts.motion++;
+  $("pgMotionCount").textContent = String(pgCounts.motion);
+  const now = performance.now();
+  const acc = event.accelerationIncludingGravity;
+  const rot = event.rotationRate;
+  if ($("pgAccel").checked && acc && pgValid3([acc.x, acc.y, acc.z])) {
+    const [x, y, z] = [acc.x, acc.y, acc.z];
+    const magnitude = Math.hypot(x, y, z);
+    pgLatest.accelerometer = { x: pgRound(x), y: pgRound(y), z: pgRound(z), magnitude: pgRound(magnitude) };
+    pgMotionSamples.push(magnitude);
+    if (pgMotionSamples.length > 500) pgMotionSamples.shift();
+    pgLastMotion = now;
+  }
+  if ($("pgGyro").checked && rot && pgValid3([rot.alpha, rot.beta, rot.gamma])) {
+    const factor = Math.PI / 180;
+    const [x, y, z] = [rot.alpha * factor, rot.beta * factor, rot.gamma * factor];
+    pgLatest.gyroscope = { x: pgRound(x), y: pgRound(y), z: pgRound(z), magnitude: pgRound(Math.hypot(x, y, z)), unit: "rad/s" };
+    pgLastMotion = now;
+  }
+}
+
+function pgOrientationEvent(event) {
+  if (!pgActive || !$("pgOrientation").checked) return;
+  if (!pgValid3([event.alpha, event.beta, event.gamma])) return;
+  pgCounts.orientation++;
+  $("pgOrientationCount").textContent = String(pgCounts.orientation);
+  pgLatest.orientation = {
+    alpha: pgRound(event.alpha), beta: pgRound(event.beta), gamma: pgRound(event.gamma), unit: "deg",
+  };
+  pgLastOrientation = performance.now();
+}
+
+function pgAudioRms() {
+  if (!pgAnalyser) return null;
+  const buf = new Float32Array(pgAnalyser.fftSize);
+  pgAnalyser.getFloatTimeDomainData(buf);
+  const rms = Math.sqrt(buf.reduce((sum, item) => sum + item * item, 0) / buf.length);
+  return { rms: pgRound(rms), unit: "linear_amplitude_0_to_1" };
+}
+
+function pgSnapshot() {
+  const now = performance.now();
+  const selected = {};
+  if ($("pgAccel").checked && pgLatest.accelerometer && now - pgLastMotion < 6000) {
+    selected.accelerometer = pgLatest.accelerometer;
+  }
+  if ($("pgGyro").checked && pgLatest.gyroscope && now - pgLastMotion < 6000) {
+    selected.gyroscope = pgLatest.gyroscope;
+  }
+  if ($("pgOrientation").checked && pgLatest.orientation && now - pgLastOrientation < 6000) {
+    selected.orientation = pgLatest.orientation;
+  }
+  if ($("pgGps").checked && pgLatest.gps && now - pgLastGps < 60000) {
+    selected.gps = pgLatest.gps;
+  }
+  if ($("pgMic").checked) {
+    const rms = pgAudioRms();
+    if (rms) selected.microphone = rms;
+  }
+  const features = {};
+  if (selected.accelerometer && pgMotionSamples.length) {
+    const meanMag = pgMotionSamples.reduce((a, b) => a + b, 0) / pgMotionSamples.length;
+    const sqDiff = pgMotionSamples.reduce((acc, m) => acc + (m - meanMag) ** 2, 0) / pgMotionSamples.length;
+    features.motion_rms = pgRound(Math.sqrt(sqDiff));
+  }
+  pgMotionSamples = [];
+  return { device_id: pgDevice, sent_at_ms: Date.now(), sequence: pgSeq++, sensors: selected, features };
+}
+
+function pgPublish() {
+  if (!pgActive) return;
+  const data = pgSnapshot();
+  $("pgPayload").textContent = JSON.stringify(data, null, 2);
+  if (!Object.keys(data.sensors).length) {
+    pgStatus("Belum ada pembacaan sensor valid. Cek izin dan dukungan perangkat.");
+    return;
+  }
+  if (!pgConnected || !pgClient) {
+    pgStatus("Sensor terbaca, MQTT belum tersambung. Cek WSS dan koneksi.");
+    return;
+  }
+  pgClient.publish(pgTopic, JSON.stringify(data), { qos: 1, retain: false }, (err) => {
+    if (err) {
+      pgLog("Publish gagal: " + err.message);
+    } else {
+      $("pgSent").textContent = String(++pgSent);
+      pgStatus("Sensor aktif · MQTT terkirim ke " + pgTopic);
+    }
+  });
+}
+
+function pgLockConfig(running) {
+  ["pgDevice", "pgBroker", "pgTopic", "pgInterval", "pgUsername", "pgPassword",
+   "pgAccel", "pgGyro", "pgOrientation", "pgGps", "pgMic"]
+    .forEach((id) => { $(id).disabled = running; });
+}
+
+async function pgStopSender() {
+  pgActive = false;
+  pgConnected = false;
+  window.removeEventListener("devicemotion", pgMotionEvent);
+  window.removeEventListener("deviceorientation", pgOrientationEvent);
+  if (pgTimer !== null) clearInterval(pgTimer);
+  pgTimer = null;
+  if (pgGpsWatcher !== null) navigator.geolocation.clearWatch(pgGpsWatcher);
+  pgGpsWatcher = null;
+  if (pgMicStream) pgMicStream.getTracks().forEach((track) => track.stop());
+  pgMicStream = null;
+  pgAnalyser = null;
+  if (pgAudioContext) { pgAudioContext.close().catch(() => {}); pgAudioContext = null; }
+  if (pgClient) { pgClient.end(true); pgClient = null; }
+  $("pgStart").disabled = false;
+  $("pgStop").disabled = true;
+  pgLockConfig(false);
+  pgStatus("Berhenti");
+}
+
+async function pgStartSender(event) {
+  event.preventDefault();
+  if (pgActive) return;
+  if (!window.isSecureContext) { pgStatus("Butuh HTTPS untuk sensor HP."); return; }
+  if (typeof mqtt === "undefined") { pgStatus("MQTT.js belum termuat. Periksa internet."); return; }
+  const sensors = ["pgAccel", "pgGyro", "pgOrientation", "pgGps", "pgMic"];
+  if (!sensors.some((id) => $(id).checked)) {
+    pgStatus("Pilih setidaknya 1 sensor."); return;
+  }
+  pgDevice = $("pgDevice").value.trim();
+  pgTopic = $("pgTopic").value.trim();
+  const broker = normalizeMqttWss($("pgBroker").value.trim());
+  $("pgBroker").value = broker;
+  if (!/^[A-Za-z0-9_-]+$/.test(pgDevice)) { pgStatus("Device ID tidak valid."); return; }
+  if (!pgTopic || !/^[A-Za-z0-9_/-]+$/.test(pgTopic) || pgTopic.startsWith("/")) {
+    pgStatus("Topic MQTT tidak valid."); return;
+  }
+  try {
+    const permissions = [];
+    if (($("pgAccel").checked || $("pgGyro").checked)
+        && typeof DeviceMotionEvent !== "undefined"
+        && typeof DeviceMotionEvent.requestPermission === "function") {
+      permissions.push(DeviceMotionEvent.requestPermission());
+    }
+    if ($("pgOrientation").checked && typeof DeviceOrientationEvent !== "undefined"
+        && typeof DeviceOrientationEvent.requestPermission === "function") {
+      permissions.push(DeviceOrientationEvent.requestPermission());
+    }
+    const results = await Promise.all(permissions);
+    if (results.some((result) => result !== "granted")) {
+      pgStatus("Izin sensor gerak ditolak."); return;
+    }
+  } catch (error) {
+    pgStatus("Gagal meminta izin sensor: " + error.message); return;
+  }
+  pgActive = true;
+  pgConnected = false;
+  pgSeq = 0; pgSent = 0;
+  pgLatest = {}; pgMotionSamples = [];
+  pgLastMotion = 0; pgLastOrientation = 0; pgLastGps = 0;
+  pgCounts = { motion: 0, orientation: 0, gps: 0 };
+  ["pgMotionCount", "pgOrientationCount", "pgGpsCount", "pgSent"].forEach((id) => { $(id).textContent = "0"; });
+  $("pgPayload").textContent = "Menunggu data sensor...";
+  $("pgStart").disabled = true;
+  $("pgStop").disabled = false;
+  pgLockConfig(true);
+  pgStatus("Menunggu pembacaan sensor dan koneksi MQTT...");
+  if ($("pgAccel").checked || $("pgGyro").checked) {
+    if (typeof DeviceMotionEvent !== "undefined") window.addEventListener("devicemotion", pgMotionEvent);
+  }
+  if ($("pgOrientation").checked) {
+    if (typeof DeviceOrientationEvent !== "undefined") window.addEventListener("deviceorientation", pgOrientationEvent);
+  }
+  if ($("pgGps").checked && "geolocation" in navigator) {
+    pgGpsWatcher = navigator.geolocation.watchPosition((pos) => {
+      const { latitude, longitude, accuracy } = pos.coords;
+      pgLatest.gps = { latitude: pgRound(latitude), longitude: pgRound(longitude), accuracy_m: pgRound(accuracy) };
+      pgLastGps = performance.now();
+      $("pgGpsCount").textContent = String(++pgCounts.gps);
+    }, (err) => pgLog("GPS: " + err.message), { enableHighAccuracy: false, maximumAge: 5000, timeout: 15000 });
+  }
+  if ($("pgMic").checked) {
+    try {
+      pgMicStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      pgAudioContext = new AudioCtx();
+      const src = pgAudioContext.createMediaStreamSource(pgMicStream);
+      pgAnalyser = pgAudioContext.createAnalyser();
+      pgAnalyser.fftSize = 1024;
+      src.connect(pgAnalyser);
+      await pgAudioContext.resume();
+    } catch (err) {
+      pgLog("Microphone unavailable: " + err.message);
+    }
+  }
+  const sessionClient = mqtt.connect(broker, {
+    clientId: "playground-" + pgDevice + "-" + crypto.randomUUID().slice(0, 8),
+    username: $("pgUsername").value || undefined,
+    password: $("pgPassword").value || undefined,
+    reconnectPeriod: 3000, connectTimeout: 10000,
+  });
+  pgClient = sessionClient;
+  sessionClient.on("connect", () => {
+    if (!pgActive || pgClient !== sessionClient) return;
+    pgConnected = true; pgStatus("MQTT terhubung, menunggu data sensor...");
+  });
+  sessionClient.on("offline", () => { pgConnected = false; });
+  sessionClient.on("error", (err) => { pgLog("MQTT error: " + err.message); });
+  pgTimer = setInterval(pgPublish, Number($("pgInterval").value));
+}
+
+function pgToggleMode() {
+  const open = $("playgroundView").hidden;
+  if (active) stop();
+  if (pgActive) pgStopSender();
+  $("playgroundView").hidden = !open;
+  $("rebahguardView").hidden = open;
+  $("legacyIntro").hidden = open;
+  $("modeToggle").textContent = open ? "Kembali ke RebahGuard" : "Buka Sensor Playground";
+  $("modeToggle").setAttribute("aria-expanded", String(open));
+  $("modeLabel").textContent = "Mode: " + (open ? "Sensor Playground" : "RebahGuard");
+}
+
+$("modeToggle").addEventListener("click", pgToggleMode);
+$("playgroundForm").addEventListener("submit", pgStartSender);
+$("pgStop").addEventListener("click", pgStopSender);
+$("pgCopy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("pgTopic").value.trim());
+    pgLog("Topic disalin.");
+  } catch (_) {}
+});
+window.addEventListener("pagehide", pgStopSender);
+if (params.get("mode") === "playground") pgToggleMode();
+</script>
+</body>
+</html>
